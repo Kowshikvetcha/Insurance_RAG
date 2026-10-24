@@ -9,6 +9,8 @@ export interface JobState {
   percent: number
   session_id: string | null
   error: string | null
+  eta_seconds?: number | null // rough estimate of time left, from the backend
+  version?: number
 }
 
 export interface TableInfo {

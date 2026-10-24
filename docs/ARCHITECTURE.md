@@ -71,7 +71,7 @@ flowchart LR
 ## Directories
 
 | Path | Purpose |
-|---|---|
+| --- | --- |
 | `backend/app/` | FastAPI app: settings, provider factories, session store, RAG answering, HTTP routers |
 | `backend/app/ingestion/` | The ingestion engine: parser interface and Docling backend, table normalisation, figures, enrichment, chunking, orchestration |
 | `backend/app/routers/` | HTTP endpoints (documents/jobs/report/figures, chat) |
@@ -85,7 +85,7 @@ flowchart LR
 ### Backend: core
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `backend/app/main.py` | FastAPI app. In the lifespan it builds `AppState` if none is injected (tests inject one), warms up the Docling models in a background thread, and runs a janitor task every 60 s that evicts expired sessions and old jobs. Defines CORS, `/` and `/health`. |
 | `backend/app/config.py` | `Settings` (pydantic-settings) read from `backend/.env`, with an absolute path so it works from any directory. `get_settings()` also calls `load_dotenv()` so provider SDKs see API keys in `os.environ`. |
 | `backend/app/providers.py` | Factories for the pluggable models: `get_llm()`, `get_vision_llm()` (both through `init_chat_model`), `get_embeddings()` (openai/voyage/cohere/fake) and `get_reranker()` (none/cohere). Provider packages are imported lazily. |
@@ -102,7 +102,7 @@ flowchart LR
 ### Backend: ingestion engine
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `backend/app/ingestion/models.py` | Parser-neutral types: `Block`, `TableGrid` (full grid with spans expanded, header-row count, page range, vertical position), `Figure`, `ParsedDocument`. |
 | `backend/app/ingestion/parser_base.py` | The `Parser` protocol and the `get_parser()` registry. Only `docling` is implemented; the other names raise `ParserNotAvailable`. |
 | `backend/app/ingestion/docling_parser.py` | Docling backend: converter setup (OCR auto, TableFormer accurate, picture images), PyMuPDF triage, clipped-word recovery, numbering-based heading levels, conversion to `Block`s. |
@@ -115,7 +115,7 @@ flowchart LR
 ### Backend: tests
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `backend/tests/conftest.py` | `offline_settings()` and session-scoped fixtures: the sample PDF, plus one full ingestion run reused across tests. |
 | `backend/tests/fixtures/make_sample_policy.py` | Generates `sample_policy.pdf`, a fictional 4-page policy covering the hard ingestion cases. |
 | `backend/tests/test_tables.py` | Unit tests for table merging and normalisation. |
@@ -126,13 +126,15 @@ flowchart LR
 ### Frontend
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `frontend/vite.config.ts` | Dev server on :5173 that proxies `/api/*` to `http://127.0.0.1:8000` and strips the `/api` prefix. |
 | `frontend/src/api.ts` | Types that mirror the backend payloads, plus `uploadDocument`, `watchJob` (EventSource), `fetchReport`, `figureUrl` and `streamChat` (fetch + manual SSE parsing). |
 | `frontend/src/App.tsx` | App shell: upload/job/session/report state, chat history, and streaming updates to the last message. |
 | `frontend/src/components/UploadPanel.tsx` | Drop zone, progress bar and stage checklist. |
 | `frontend/src/components/IngestionReport.tsx` | Report stats, warnings, table previews, figures, defined terms. |
-| `frontend/src/components/ChatWindow.tsx` | Starter questions, message list (markdown), citation chips and `SourceViewer` (table/text/figure modal). |
+| `frontend/src/components/ChatWindow.tsx` | Message list (markdown), citation chips, the "Common questions" toggle, and `SourceViewer` (table/text/figure modal). Shows the FAQ panel on the empty screens. |
+| `frontend/src/components/FaqPanel.tsx` | Common-questions panel: category tabs, a search box across all questions, click-to-ask. A full version for the empty states and a compact one for the composer popover. |
+| `frontend/src/faq.ts` | The FAQ content: 41 common health-insurance questions in 6 categories (Coverage, Waiting periods, Limits & costs, Exclusions, Claims, Renewal & premium). Edit this file to change the suggestions. |
 | `frontend/src/index.css` | Theme tokens (light and dark) and all styles, including the mobile layout. |
 
 ## Key design decisions / gotchas

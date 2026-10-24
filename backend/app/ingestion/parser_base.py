@@ -7,7 +7,7 @@ from typing import Callable, Protocol
 from app.config import Settings
 from app.ingestion.models import ParsedDocument
 
-ProgressFn = Callable[[str], None]
+ProgressFn = Callable[[int, int, str], None]  # (pages done, total pages, message)
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx"}
 

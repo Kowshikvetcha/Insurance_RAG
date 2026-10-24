@@ -37,7 +37,7 @@ npm run build      # tsc -b && vite build (use this as the type check)
 
 ## Architecture in one screen
 
-```
+```text
 upload → routers/documents.py → jobs.JobManager (thread pool) → ingestion/pipeline.ingest():
   docling_parser (PyMuPDF triage, Docling layout + TableFormer + RapidOCR, clipped-cell recovery)
   → tables (absorb footnotes, cross-page merge, normalise: flatten headers, group rows, footnote links)
@@ -56,6 +56,7 @@ chat → routers/chat.py → rag.answer_stream: rewrite → hybrid search (RRF +
 - **Grounding rules live in `prompts.py`.** Answer only from the excerpts, cite `[Source N]`, name plan/column and row for table values, surface waiting periods, exclusions, sub-limits, co-pays and footnotes, say "The policy document does not specify this." when the answer is absent, and give no purchase advice. Preserve these when editing prompts.
 - **Privacy.** Documents stay in memory only. Never log document text or chunk contents (log exception types and ids only). Don't add disk persistence without the user agreeing to it.
 - **The SSE contract** between `rag.answer_stream`/`routers/chat.py` and `frontend/src/api.ts::streamChat` is the event names `query`, `token`, `citations`, `error`, `done`. Change both sides together. The same applies to the report and citation dict shapes in `pipeline.build_report` / `rag.build_context` and their TypeScript types in `api.ts`.
+- **Suggested questions** live only in `frontend/src/faq.ts`. Keep them generic, not tied to one insurer or plan, so they make sense for any uploaded policy.
 - **Style.** Python: type hints, dataclasses, short docstrings that explain *why*, a moderate comment density. TypeScript: function components, no UI library, styles in `index.css` using the CSS-variable theme tokens (light and dark).
 
 ## Testing notes

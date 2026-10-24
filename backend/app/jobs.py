@@ -27,11 +27,12 @@ class Job:
     percent: int = 0
     session_id: str | None = None
     error: str | None = None
+    eta_seconds: float | None = None  # rough estimate of time left, recomputed at each progress update
     version: int = 0
     created: float = field(default_factory=time.time)
 
     def snapshot(self) -> dict:
-        return {k: getattr(self, k) for k in ("id", "filename", "status", "stage", "message", "percent", "session_id", "error", "version")}
+        return {k: getattr(self, k) for k in ("id", "filename", "status", "stage", "message", "percent", "session_id", "error", "eta_seconds", "version")}
 
 
 class JobManager:
@@ -62,9 +63,11 @@ class JobManager:
         self._update(job, status="running", stage="parsing", message="Starting", percent=1)
         try:
             session = ingest(data, job.filename, self.settings,
-                             lambda stage, msg, pct: self._update(job, stage=stage, message=msg, percent=pct))
+                             lambda stage, msg, pct, eta=None: self._update(
+                                 job, stage=stage, message=msg, percent=pct,
+                                 eta_seconds=None if eta is None else round(max(eta, 0.0), 1)))
             self.store.add(session)
-            self._update(job, status="done", stage="done", message="Ready", percent=100, session_id=session.id)
+            self._update(job, status="done", stage="done", message="Ready", percent=100, session_id=session.id, eta_seconds=0.0)
         except ValueError as exc:  # user-facing problems: too many pages, no text, ...
             self._update(job, status="error", error=str(exc), message="Failed")
         except Exception as exc:  # noqa: BLE001

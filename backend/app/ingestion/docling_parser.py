@@ -15,6 +15,7 @@ from app.ingestion.parser_base import ProgressFn
 
 # Pages whose text layer has fewer characters than this are treated as scanned / image-only.
 MIN_TEXT_CHARS = 40
+PAGES_PER_BATCH = 2  # smaller = finer progress; per-batch overhead is small once models are loaded
 HEADING_NUMBER = re.compile(r"^\s*((?:\d+\.)*\d+)\.?\s+\S")
 
 
@@ -91,19 +92,46 @@ class DoclingParser:
                     warnings.append(f"{len(ocr_pages)} page(s) have no text layer and were read with OCR: {_fmt_pages(ocr_pages)}")
                 else:
                     warnings.append(f"{len(ocr_pages)} page(s) have no text layer and OCR is disabled: {_fmt_pages(ocr_pages)}")
-        if progress:
-            progress("Running layout, table-structure and OCR models")
+        else:
+            num_pages = 1
 
+        if self._converter is None and progress:
+            progress(0, num_pages, "Loading layout, table and OCR models (first upload only)")
         self.warmup()
-        with self._lock:  # Docling's converter is not safe to share across concurrent conversions
-            result = self._converter.convert(DocumentStream(name=filename, stream=io.BytesIO(data)))
-        doc = result.document
-        if not is_pdf:
+
+        def convert(page_range: tuple[int, int] | None = None):
+            stream = DocumentStream(name=filename, stream=io.BytesIO(data))
+            with self._lock:  # Docling's converter is not safe to share across concurrent conversions
+                if page_range is None:
+                    return self._converter.convert(stream).document
+                return self._converter.convert(stream, page_range=page_range).document
+
+        blocks: list[Block] = []
+        if is_pdf:
+            # Convert in small page batches so we can report real progress. Page numbers stay
+            # absolute, and tables split across a batch boundary are rejoined by
+            # merge_cross_page_tables exactly as tables split across pages are.
+            for start in range(1, num_pages + 1, PAGES_PER_BATCH):
+                end = min(start + PAGES_PER_BATCH - 1, num_pages)
+                if progress:
+                    progress(start - 1, num_pages, f"Reading page {start} of {num_pages}")
+                blocks.extend(_to_blocks(convert((start, end)), words))
+            if progress:
+                progress(num_pages, num_pages, f"Read all {num_pages} pages")
+        else:
+            if progress:
+                progress(0, 1, "Reading document")
+            doc = convert()
             num_pages = max(len(doc.pages), 1)
+            blocks = _to_blocks(doc, words)
+            if progress:
+                progress(1, 1, "Read document")
+        for i, b in enumerate(blocks):
+            b.id = f"b{i}"
         return ParsedDocument(
             filename=filename,
             num_pages=num_pages,
-            blocks=_to_blocks(doc, words),
+            blocks=blocks,
             ocr_pages=ocr_pages,
             warnings=warnings,
             parser=self.name,

@@ -3,6 +3,7 @@ import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Citation } from '../api'
 import { figureUrl } from '../api'
+import { FaqPanel } from './FaqPanel'
 
 export interface Message {
   role: 'user' | 'assistant'
@@ -11,15 +12,6 @@ export interface Message {
   pending?: boolean
   error?: string
 }
-
-const STARTERS = [
-  'What is the waiting period for pre-existing diseases?',
-  'Is there a room rent limit? Give it for each plan.',
-  'What are the permanent exclusions?',
-  'Is maternity covered, and with what limits?',
-  'Is there any co-payment?',
-  'How do I make a cashless claim?',
-]
 
 interface Props {
   sessionId: string | null
@@ -31,6 +23,7 @@ interface Props {
 export function ChatWindow({ sessionId, messages, onAsk, busy }: Props) {
   const [text, setText] = useState('')
   const [open, setOpen] = useState<Citation | null>(null)
+  const [faqOpen, setFaqOpen] = useState(false)
   const end = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -42,6 +35,7 @@ export function ChatWindow({ sessionId, messages, onAsk, busy }: Props) {
     if (!question || busy || !sessionId) return
     onAsk(question)
     setText('')
+    setFaqOpen(false)
   }
 
   return (
@@ -54,18 +48,15 @@ export function ChatWindow({ sessionId, messages, onAsk, busy }: Props) {
               Upload the policy wording or brochure. Ask about coverage, limits, waiting periods and exclusions. Every
               answer is grounded in the document and cites its page.
             </p>
+            <h3 className="faq-title">Questions you can ask</h3>
+            <FaqPanel onPick={submit} disabled />
           </div>
         )}
         {sessionId && messages.length === 0 && (
           <div className="empty">
             <h2>Ask anything about this policy</h2>
-            <div className="starters">
-              {STARTERS.map((s) => (
-                <button key={s} className="starter" onClick={() => submit(s)}>
-                  {s}
-                </button>
-              ))}
-            </div>
+            <p className="muted">Pick a common question or type your own.</p>
+            <FaqPanel onPick={submit} disabled={busy} />
           </div>
         )}
         {messages.map((m, i) => (
@@ -94,6 +85,18 @@ export function ChatWindow({ sessionId, messages, onAsk, busy }: Props) {
         <div ref={end} />
       </div>
 
+      {faqOpen && sessionId && messages.length > 0 && (
+        <div className="faq-popover">
+          <div className="faq-popover-head">
+            <strong>Common questions</strong>
+            <button className="ghost" onClick={() => setFaqOpen(false)} aria-label="Close common questions">
+              ✕
+            </button>
+          </div>
+          <FaqPanel onPick={submit} disabled={busy} compact />
+        </div>
+      )}
+
       <form
         className="composer"
         onSubmit={(e) => {
@@ -114,6 +117,17 @@ export function ChatWindow({ sessionId, messages, onAsk, busy }: Props) {
             }
           }}
         />
+        {sessionId && messages.length > 0 && (
+          <button
+            type="button"
+            className={`secondary${faqOpen ? ' active' : ''}`}
+            onClick={() => setFaqOpen((v) => !v)}
+            aria-expanded={faqOpen}
+            title="Browse common questions"
+          >
+            Common questions
+          </button>
+        )}
         <button type="submit" disabled={!sessionId || busy || !text.trim()}>
           {busy ? '…' : 'Ask'}
         </button>

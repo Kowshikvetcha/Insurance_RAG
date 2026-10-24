@@ -56,17 +56,37 @@ main { min-width: 0; height: 100vh; }
 
 .dropzone { border: 2px dashed var(--border); border-radius: 12px; padding: 22px 14px; text-align: center; display: flex; flex-direction: column; gap: 4px; cursor: pointer; background: var(--surface-2); word-break: break-word; }
 .dropzone.dragging { border-color: var(--accent); background: var(--accent-soft); }
-.dropzone.disabled { cursor: progress; }
+.dropzone.disabled { cursor: progress; border-style: solid; }
 
 .progress { margin-top: 12px; }
-.bar { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
-.fill { height: 100%; background: var(--accent); transition: width 0.3s; }
-.stages { list-style: none; padding: 0; margin: 10px 0 6px; font-size: 13px; color: var(--muted); }
-.stages li::before { content: '○ '; }
+.progress-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; font-size: 13px; }
+.progress-top .pct { font-weight: 700; font-variant-numeric: tabular-nums; }
+.progress-top .eta { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+.bar { position: relative; height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.fill { position: relative; height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.6s ease; overflow: hidden; }
+/* moving stripes on the filled part */
+.fill::before { content: ''; position: absolute; inset: 0; background-image: linear-gradient(45deg, rgba(255,255,255,0.25) 25%, transparent 25%, transparent 50%, rgba(255,255,255,0.25) 50%, rgba(255,255,255,0.25) 75%, transparent 75%); background-size: 16px 16px; animation: stripes 0.8s linear infinite; }
+/* a light sweep across the whole track, so it visibly moves even when the percentage doesn't */
+.bar::after { content: ''; position: absolute; top: 0; bottom: 0; width: 30%; left: -30%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent); animation: sweep 1.6s ease-in-out infinite; }
+@keyframes stripes { from { background-position: 0 0; } to { background-position: 16px 0; } }
+@keyframes sweep { from { left: -30%; } to { left: 100%; } }
+
+.stages { list-style: none; padding: 0; margin: 12px 0 8px; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.stages li { display: flex; gap: 8px; align-items: flex-start; }
+.stage-icon { width: 16px; flex: none; display: inline-flex; justify-content: center; padding-top: 2px; line-height: 1; }
 .stages li.done { color: var(--text); }
-.stages li.done::before { content: '✓ '; color: var(--accent); }
+.stages li.done .stage-icon { color: var(--accent); }
 .stages li.active { color: var(--accent); font-weight: 600; }
-.stages li.active::before { content: '● '; }
+.stage-detail { display: block; font-weight: 400; color: var(--muted); font-size: 12px; margin-top: 1px; font-variant-numeric: tabular-nums; }
+.spinner { width: 12px; height: 12px; border: 2px solid var(--accent-soft); border-top-color: var(--accent); border-radius: 50%; display: inline-block; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.dropzone.disabled { animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { border-color: var(--border); } 50% { border-color: var(--accent); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .fill::before, .bar::after, .spinner, .dropzone.disabled { animation: none; }
+  .bar::after { display: none; }
+}
 
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .stat { background: var(--surface-2); border-radius: 8px; padding: 8px; text-align: center; }
@@ -91,11 +111,28 @@ main { min-width: 0; height: 100vh; }
 
 .chat { display: flex; flex-direction: column; height: 100%; }
 .messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
-.empty { max-width: 640px; margin: 10vh auto 0; text-align: center; }
+.empty { max-width: 760px; width: 100%; margin: 6vh auto 0; text-align: center; }
 .empty h2 { margin-bottom: 8px; }
-.starters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; }
-.starter { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; text-align: left; color: var(--text); }
-.starter:hover { border-color: var(--accent); }
+.faq-title { margin: 28px 0 10px; font-size: 15px; }
+
+.faq { text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-top: 14px; }
+.faq-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.faq-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.faq-tab { background: var(--surface-2); border: 1px solid transparent; border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--muted); }
+.faq-tab:hover { color: var(--text); }
+.faq-tab.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.faq-search { flex: 1 1 160px; max-width: 220px; font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+.faq-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.faq-q { width: 100%; height: 100%; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; text-align: left; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; color: var(--text); font-size: 14px; }
+.faq-q:not(:disabled):hover { border-color: var(--accent); }
+.faq-q:not(:disabled):hover .faq-go { color: var(--accent); }
+.faq-q:disabled { opacity: 0.7; cursor: default; }
+.faq-go { color: var(--muted); flex: none; }
+.faq-empty { grid-column: 1 / -1; padding: 8px 4px; }
+.faq.compact { border: none; padding: 0; margin: 0; background: none; }
+.faq.compact .faq-list { max-height: 260px; overflow-y: auto; }
+.faq-popover { margin: 0 24px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-bottom: none; border-radius: 12px 12px 0 0; box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08); }
+.faq-popover-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 
 .msg { display: flex; }
 .msg.user { justify-content: flex-end; }
@@ -108,6 +145,8 @@ main { min-width: 0; height: 100vh; }
 .composer { display: flex; gap: 8px; padding: 14px 24px 20px; border-top: 1px solid var(--border); background: var(--surface); }
 .composer textarea { flex: 1; resize: none; font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
 .composer button { padding: 0 20px; border-radius: 10px; border: none; background: var(--accent); color: #fff; font-weight: 600; }
+.composer button.secondary { padding: 0 14px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); font-weight: 500; }
+.composer button.secondary.active { border-color: var(--accent); color: var(--accent); }
 
 .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
 .viewer { background: var(--surface); border-radius: 12px; max-width: 900px; width: 100%; max-height: 85vh; overflow: auto; padding: 16px 20px; }
@@ -121,5 +160,8 @@ main { min-width: 0; height: 100vh; }
   main { height: 80vh; }
   .messages { padding: 16px; }
   .composer { padding: 12px 16px; }
-  .starters { grid-template-columns: 1fr; }
+  .faq-list { grid-template-columns: 1fr; }
+  .faq-search { max-width: none; }
+  .faq-popover { margin: 0 16px; }
+  .composer button.secondary { padding: 0 10px; font-size: 13px; }
 }
