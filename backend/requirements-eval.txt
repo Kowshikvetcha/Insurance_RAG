@@ -1,0 +1,4 @@
+# Offline evaluation suite (evals/run_evals.py). Install on top of requirements.txt:
+#   .venv/Scripts/python -m pip install -r requirements-eval.txt
+-r requirements.txt
+ragas>=0.4,<0.5

@@ -85,6 +85,24 @@ docs/ARCHITECTURE.md    request flows, file-by-file reference, design decisions
 CLAUDE.md               guidance for Claude Code in this repo
 ```
 
+## Observability and evaluation
+
+Every question and upload is traced to a self-hosted **Langfuse** (Docker, localhost only), and each answer is
+graded in the background for **groundedness**, **context relevance**, **answer relevance** and a composite
+**confidence**. An offline suite scores a golden question set with our metrics plus **RAGAS**.
+
+```bash
+cd infra/langfuse
+docker compose up -d
+```
+
+```bash
+cd backend
+.venv/Scripts/python -m evals.run_evals
+```
+
+Open http://localhost:3000 for traces and scores. Details and how to read them: [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
+
 ## Tests
 
 ```bash
@@ -111,5 +129,6 @@ Policy documents can contain personal data (names, policy and member numbers):
 
 - [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md): what the project does and why, the ingestion and answering pipeline, UI components, tools used at each stage.
 - [docs/TECHNICAL_DESIGN.md](docs/TECHNICAL_DESIGN.md): engineering design: problem statement, requirements, design decisions with alternatives, ingestion and retrieval internals, API contracts, performance and ETA model, libraries and versions, testing, limitations.
+- [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md): tracing with self-hosted Langfuse, live answer scores (groundedness, relevance, confidence), the offline RAGAS suite, and how to read them.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how upload and chat requests flow through the code, a file-by-file reference, and the design decisions and gotchas.
 - [CLAUDE.md](CLAUDE.md): commands, conventions and invariants for working on the repo with Claude Code.

@@ -33,7 +33,8 @@ def skip_reason(fig: Figure) -> str:
     return ""
 
 
-def describe_figures(figures: list[tuple[Figure, str]], llm: BaseChatModel | None, max_concurrency: int) -> int:
+def describe_figures(figures: list[tuple[Figure, str]], llm: BaseChatModel | None, max_concurrency: int,
+                     callbacks: list | None = None) -> int:
     """Fill Figure.description in place. `figures` pairs each figure with its section context.
     Returns how many were described by the vision model."""
     todo = [(f, ctx) for f, ctx in figures if not f.skipped_reason and f.image_png]
@@ -50,7 +51,8 @@ def describe_figures(figures: list[tuple[Figure, str]], llm: BaseChatModel | Non
                     {"type": "image", "base64": base64.b64encode(fig.image_png).decode(), "mime_type": "image/png"},
                 ])
             ])
-        results = llm.batch(messages, config={"max_concurrency": max_concurrency}, return_exceptions=True)
+        results = llm.batch(messages, config={"max_concurrency": max_concurrency, "callbacks": callbacks or [], "run_name": "describe_figure"},
+                            return_exceptions=True)
         for (fig, _), res in zip(todo, results):
             if isinstance(res, Exception):
                 log.warning("Vision description failed: %s", type(res).__name__)

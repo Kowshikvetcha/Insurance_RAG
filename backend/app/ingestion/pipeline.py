@@ -13,6 +13,7 @@ import math
 import time
 from typing import Callable
 
+from app import observability as obs
 from app.config import Settings
 from app.ingestion import chunking
 from app.ingestion.enrich import llm_tag, summarise_tables
@@ -63,11 +64,33 @@ def _llm_or_none(settings: Settings, enabled: bool, vision: bool = False):
 
 
 def ingest(data: bytes, filename: str, settings: Settings, progress: Progress) -> Session:
+    """Run the pipeline inside an `ingest` trace (a no-op when Langfuse isn't configured)."""
+    trace = obs.start_trace(
+        "ingest",
+        input={"filename": filename, "bytes": len(data)},
+        metadata={"parser": settings.parser, "ocr": settings.enable_ocr, "vision": settings.enable_vision,
+                  "table_summaries": settings.enable_table_summaries,
+                  "embeddings": f"{settings.embed_provider}:{settings.embed_model}"},
+        tags=["ingest"],
+    )
+    try:
+        session = _ingest(data, filename, settings, progress, trace)
+    except Exception as exc:
+        trace.end(level="ERROR", status_message=f"{type(exc).__name__}: {exc}"[:300])
+        raise
+    r = session.report
+    summary = {k: r[k] for k in ("pages", "ocr_pages", "table_fragments", "definitions", "parents", "search_units", "warnings", "timings")}
+    trace.end(output=summary | {"tables": len(r["tables"]), "figures": len(r["figures"])})
+    return session
+
+
+def _ingest(data: bytes, filename: str, settings: Settings, progress: Progress, trace: obs.Span) -> Session:
     timings: dict[str, float] = {}
     t0 = time.perf_counter()
 
     # 1. parse ------------------------------------------------------------------------------
     progress("parsing", "Analysing layout", PCT["parsing"], None)
+    span = trace.child("parse", metadata={"parser": settings.parser})
     parser = get_parser(settings)
     parse_start: list[float] = []  # set when the first page batch starts (after any model loading)
 
@@ -93,13 +116,20 @@ def ingest(data: bytes, filename: str, settings: Settings, progress: Progress) -
         measured = (time.perf_counter() - parse_start[0]) / doc.num_pages
         _rate["sec_per_page"] = 0.5 * _rate["sec_per_page"] + 0.5 * measured
     raw_tables = sum(1 for b in doc.blocks if b.kind == "table")
+    span.end(output={"pages": doc.num_pages, "ocr_pages": doc.ocr_pages, "blocks": len(doc.blocks),
+                     "table_fragments": raw_tables, "warnings": doc.warnings,
+                     "seconds": round(timings["parsing"], 2)})
 
     # 2. tables -----------------------------------------------------------------------------
     t = time.perf_counter()
     progress("tables", f"Normalising {raw_tables} table fragment(s)", PCT["tables"], _after_parse_estimate(doc.num_pages, settings))
+    span = trace.child("tables_and_structure", input={"table_fragments": raw_tables})
     doc.blocks = merge_cross_page_tables(absorb_trailing_footnotes(doc.blocks))
     builder = chunking.build_structure(doc, settings.table_group_rows)
     timings["tables"] = time.perf_counter() - t
+    span.end(output={"tables": [{"title": tb.title, "pages": tb.page_label(), "rows": len(tb.rows), "cols": len(tb.columns),
+                                 "merged_from": tb.merged_from, "footnotes": len(tb.footnotes)} for tb in builder.tables],
+                     "definitions": len(builder.glossary), "seconds": round(timings["tables"], 3)})
 
     # 3. figures ----------------------------------------------------------------------------
     t = time.perf_counter()
@@ -113,19 +143,26 @@ def ingest(data: bytes, filename: str, settings: Settings, progress: Progress) -
     figures_sec = _llm_batch_sec(len(meaningful), VISION_SEC, settings) if vision else 0.0
     progress("figures", f"Describing {len(meaningful)} figure(s)" if vision and meaningful else f"Reading {len(meaningful)} figure(s)",
              PCT["figures"], figures_sec + rest)
-    described = describe_figures([(r.figure, " › ".join(r.section_path)) for r in builder.figures], vision, settings.llm_max_concurrency)
+    span = trace.child("figures", input={"figures": len(builder.figures), "meaningful": len(meaningful)})
+    described = describe_figures([(r.figure, " › ".join(r.section_path)) for r in builder.figures], vision,
+                                 settings.llm_max_concurrency, callbacks=span.callbacks())
     builder.finish_figures()
     timings["figures"] = time.perf_counter() - t
+    span.end(output={"described_by_vision": described, "skipped": len(builder.figures) - len(meaningful),
+                     "seconds": round(timings["figures"], 2)})
 
     # 4. enrichment -------------------------------------------------------------------------
     t = time.perf_counter()
     progress("enrichment", f"Summarising {len(builder.tables)} table(s) and tagging sections", PCT["enrichment"], rest)
-    summarised = summarise_tables(builder.tables, summariser, settings.llm_max_concurrency)
+    span = trace.child("enrichment", input={"tables": len(builder.tables)})
+    summarised = summarise_tables(builder.tables, summariser, settings.llm_max_concurrency, callbacks=span.callbacks())
     builder.add_table_summaries()
     tagger = _llm_or_none(settings, settings.enable_llm_tagging)
     if tagger is not None:
         _retag_general(builder, tagger)
     timings["enrichment"] = time.perf_counter() - t
+    span.end(output={"tables_summarised_by_llm": summarised, "llm_tagging": tagger is not None,
+                     "seconds": round(timings["enrichment"], 2)})
 
     # 5. embedding --------------------------------------------------------------------------
     t = time.perf_counter()
@@ -141,8 +178,11 @@ def ingest(data: bytes, filename: str, settings: Settings, progress: Progress) -
         eta = elapsed / done * (total - done) if done else None
         progress("embedding", f"Embedded {done} of {total} search units", PCT["embedding"] + int((99 - PCT["embedding"]) * done / total), eta)
 
+    span = trace.child("embedding", as_type="embedding", input={"units": len(chunked.units)},
+                       metadata={"model": f"{settings.embed_provider}:{settings.embed_model}", "batch_size": settings.embed_batch_size})
     index.embed(settings.embed_batch_size, on_embedded)
     timings["embedding"] = time.perf_counter() - t
+    span.end(output={"units": len(chunked.units), "parents": len(chunked.parents), "seconds": round(timings["embedding"], 2)})
 
     figures_png = {r.id: r.figure.image_png for r in builder.figures if r.figure.image_png and not r.figure.skipped_reason}
     report = build_report(doc, chunked, raw_tables, described, summarised, timings, time.perf_counter() - t0, settings)

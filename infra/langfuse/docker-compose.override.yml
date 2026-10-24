@@ -1,0 +1,11 @@
+# Local hardening on top of Langfuse's official docker-compose.yml (kept unmodified so it can
+# be refreshed from upstream). Traces contain policy text, so nothing is exposed beyond this
+# machine: the web UI and MinIO are bound to localhost instead of all interfaces.
+services:
+  langfuse-web:
+    ports: !override
+      - 127.0.0.1:3000:3000
+  minio:
+    ports: !override
+      - 127.0.0.1:9090:9000
+      - 127.0.0.1:9091:9001

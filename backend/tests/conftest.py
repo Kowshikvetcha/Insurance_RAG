@@ -8,7 +8,9 @@ FIXTURE = Path(__file__).parent / "fixtures" / "sample_policy.pdf"
 
 
 def offline_settings(**overrides) -> Settings:
-    base = dict(llm_provider="fake", embed_provider="fake", rerank_provider="none")
+    # Blank Langfuse keys explicitly: backend/.env is exported to os.environ, and tests must never trace.
+    base = dict(llm_provider="fake", embed_provider="fake", rerank_provider="none",
+                langfuse_public_key="", langfuse_secret_key="")
     return Settings(_env_file=None, **(base | overrides))
 
 

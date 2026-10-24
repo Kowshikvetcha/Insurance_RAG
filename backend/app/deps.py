@@ -20,6 +20,7 @@ class AppState:
     jobs: JobManager
     llm: BaseChatModel
     reranker: Reranker
+    judge: BaseChatModel | None = None  # grades answers when evaluation is on (see app/evaluation.py)
 
 
 def get_state(request: Request) -> AppState:

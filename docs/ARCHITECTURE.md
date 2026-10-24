@@ -92,6 +92,8 @@ flowchart LR
 | `backend/app/fakes.py` | `EchoChatModel`, the offline `LLM_PROVIDER=fake`. It returns the query for rewrite prompts and the first `<source>` excerpt for answer prompts. |
 | `backend/app/deps.py` | `AppState` dataclass (settings, store, jobs, llm, reranker) and the `get_state` dependency. |
 | `backend/app/jobs.py` | `JobManager`: a 2-worker thread pool that runs `ingest()`. It keeps a versioned `Job` snapshot for the SSE endpoint to poll and prunes finished jobs after 1 h. |
+| `backend/app/observability.py` | Langfuse wrapper: client setup from settings, `Span` (child spans, LangChain callbacks, trace scores) that no-ops without keys, `flush()` on shutdown. |
+| `backend/app/evaluation.py` | Live LLM-as-judge grading: groundedness, context/answer relevance, citation checks, retrieval strength, composite confidence; `record_scores()` pushes them to the trace. |
 | `backend/app/store.py` | `tokenize()` (insurance-aware BM25 tokens), `HybridIndex` (embedding, dense + BM25 search, RRF, category boost, parent collapse), `Session`, and `SessionStore` (thread-safe, TTL eviction). |
 | `backend/app/rag.py` | Answering: `rewrite_query`, `retrieve`, `build_context` (sources + citations + glossary) and the `answer_stream` async generator. |
 | `backend/app/prompts.py` | The grounded system prompt, the answer template and the query-rewrite prompt. |
@@ -121,6 +123,9 @@ flowchart LR
 | `backend/tests/test_tables.py` | Unit tests for table merging and normalisation. |
 | `backend/tests/test_enrich_and_store.py` | Unit tests for definitions, tags, the tokenizer, structure building, hybrid search and the session store. |
 | `backend/tests/test_ingestion_e2e.py` | Real Docling run on the fixture: merged table, cell placement, footnotes, OCR, figures, golden retrieval, stream shape (marked `slow`). |
+| `backend/tests/test_evaluation.py` | Evaluation maths with a canned judge, citation heuristics, no-op tracing. |
+| `backend/evals/run_evals.py` | Offline suite over `evals/datasets/*.jsonl`: our metrics + RAGAS, reports in `evals/reports/`, Langfuse dataset runs. |
+| `infra/langfuse/` | Self-hosted Langfuse: official compose file, localhost-only override, generated secrets in a gitignored `.env`. |
 | `backend/tests/test_api.py` | HTTP tests through `TestClient`, including a full upload → chat → delete flow (marked `slow`). |
 
 ### Frontend
@@ -138,6 +143,8 @@ flowchart LR
 | `frontend/src/index.css` | Theme tokens (light and dark) and all styles, including the mobile layout. |
 
 ## Key design decisions / gotchas
+
+- **Tracing is optional and passive.** `chat` and `ingest` traces are explicit span objects (not ambient context), because answers stream from an async generator and ingestion runs in worker threads. Live grading starts only after the last token, as a background task. See `docs/OBSERVABILITY.md`.
 
 - **Parents vs. units.** Search runs over small units, but the LLM always receives the parent: the whole table or row group, or the section window. A table row matching "room rent Gold" brings in the whole table, so the model can read the column headers and footnotes.
 - **Tables are never mixed into prose chunks.** `_Builder.add_table()` flushes the text buffer first. Tables with fewer than 2 columns or 2 rows are treated as text, because layout models sometimes box a text column as a table.

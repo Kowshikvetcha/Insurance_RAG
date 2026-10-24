@@ -23,6 +23,10 @@ All backend commands run from `backend/` with the venv's Python. The venv uses `
 # frontend (from frontend/)
 npm run dev        # UI on http://localhost:5173
 npm run build      # tsc -b && vite build (use this as the type check)
+
+# observability (from infra/langfuse/ and backend/)
+docker compose up -d                                               # self-hosted Langfuse on http://localhost:3000
+.venv/Scripts/python -m evals.run_evals [--limit N] [--no-ragas]   # offline eval suite -> evals/reports/ + Langfuse dataset run
 ```
 
 `.claude/launch.json` defines `backend` and `frontend` launch configs for previewing.
@@ -56,6 +60,8 @@ chat → routers/chat.py → rag.answer_stream: rewrite → hybrid search (RRF +
 - **Grounding rules live in `prompts.py`.** Answer only from the excerpts, cite `[Source N]`, name plan/column and row for table values, surface waiting periods, exclusions, sub-limits, co-pays and footnotes, say "The policy document does not specify this." when the answer is absent, and give no purchase advice. Preserve these when editing prompts.
 - **Privacy.** Documents stay in memory only. Never log document text or chunk contents (log exception types and ids only). Don't add disk persistence without the user agreeing to it.
 - **The SSE contract** between `rag.answer_stream`/`routers/chat.py` and `frontend/src/api.ts::streamChat` is the event names `query`, `token`, `citations`, `error`, `done`. Change both sides together. The same applies to the report and citation dict shapes in `pipeline.build_report` / `rag.build_context` and their TypeScript types in `api.ts`.
+- **Observability.** Only `app/observability.py` imports Langfuse; everything else uses its `Span` wrapper, which is a no-op when `LANGFUSE_*` keys are empty (tests force them empty in `offline_settings()`). Pass `span.callbacks()` in the LangChain config of every new LLM call so it shows up in the trace. Live grading lives in `app/evaluation.py` and runs after streaming as a background task, so it must never raise or delay the answer. Never put document text in the Python logger; traces may contain it because Langfuse is local-only.
+- **Judge model** defaults to the chat provider's cheaper model (`config.CHEAP_JUDGE_MODELS`); `judge_target()` resolves it. RAGAS 0.4.3 needs `evals/ragas_compat.install()` before import (LangChain 1.x removed a module it imports).
 - **Suggested questions** live only in `frontend/src/faq.ts`. Keep them generic, not tied to one insurer or plan, so they make sense for any uploaded policy.
 - **Style.** Python: type hints, dataclasses, short docstrings that explain *why*, a moderate comment density. TypeScript: function components, no UI library, styles in `index.css` using the CSS-variable theme tokens (light and dark).
 

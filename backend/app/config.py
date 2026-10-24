@@ -49,7 +49,41 @@ class Settings(BaseSettings):
     # Sessions
     session_ttl_minutes: int = 120
 
+    # Observability master switch: tracing to Langfuse + live answer scoring. Off = neither runs.
+    # Tracing alone costs no LLM tokens; the live judge (EVAL_ENABLED) does.
+    observability_enabled: bool = True
+
+    # Self-hosted Langfuse (infra/langfuse). Tracing is also off when the keys are empty.
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = "http://localhost:3000"
+
+    # Live answer evaluation (LLM-as-judge). Blank provider = the chat LLM's provider; blank model =
+    # that provider's cheaper model from CHEAP_JUDGE_MODELS (else the chat model).
+    eval_enabled: bool = True
+    eval_sample_rate: float = 1.0
+    judge_provider: str = ""
+    judge_model: str = ""
+
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+
+# Default judge per provider: a smaller, cheaper model from the same vendor, so the judge works with
+# whatever API key is already configured for chat.
+CHEAP_JUDGE_MODELS = {
+    "anthropic": "claude-haiku-5-5",
+    "openai": "gpt-4.1-mini",
+    "google_genai": "gemini-2.5-flash",
+    "groq": "llama-3.1-8b-instant",
+    "mistralai": "mistral-small-latest",
+}
+
+
+def judge_target(settings: "Settings") -> tuple[str, str]:
+    """(provider, model) the judge will use after applying the defaults above."""
+    provider = settings.judge_provider or settings.llm_provider
+    model = settings.judge_model or CHEAP_JUDGE_MODELS.get(provider) or settings.llm_model
+    return provider, model
 
 
 @lru_cache

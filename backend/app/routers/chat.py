@@ -21,7 +21,7 @@ async def chat(req: ChatRequest, state: AppState = Depends(get_state)):
 
     async def stream():
         try:
-            async for kind, payload in answer_stream(session, req.question, history, state.llm, state.reranker, state.settings):
+            async for kind, payload in answer_stream(session, req.question, history, state.llm, state.reranker, state.settings, state.judge):
                 yield {"event": kind, "data": json.dumps(payload)}
         except Exception as exc:  # noqa: BLE001
             log.exception("Chat failed")

@@ -45,6 +45,10 @@ class Hit:
     parent: Parent
     score: float
     best_unit: Document
+    # Retrieval diagnostics for the parent's units (observability / evaluation):
+    dense_rank: int | None = None  # best rank of any of its units in the dense list (0 = top)
+    dense_sim: float | None = None  # best cosine similarity of any of its units to the query
+    bm25_rank: int | None = None  # best rank of any of its units in the BM25 list
 
 
 class HybridIndex:
@@ -75,13 +79,14 @@ class HybridIndex:
             vectors /= np.linalg.norm(vectors, axis=1, keepdims=True) + 1e-12
         self.matrix = vectors
 
-    def _dense(self, query: str, k: int) -> list[int]:
+    def _dense(self, query: str, k: int) -> list[tuple[int, float]]:
+        """Top-k unit indices with their cosine similarity to the query."""
         if self.matrix is None or not len(self.matrix):
             return []
         q = np.array(self.embeddings.embed_query(query), dtype=np.float32)
         q /= np.linalg.norm(q) + 1e-12
         sims = self.matrix @ q
-        return list(np.argsort(-sims)[:k])
+        return [(int(i), float(sims[i])) for i in np.argsort(-sims)[:k]]
 
     def _sparse(self, query: str, k: int) -> list[int]:
         if self.bm25 is None:
@@ -96,8 +101,13 @@ class HybridIndex:
     def search(self, query: str, k: int, boost_categories: set[str] | None = None) -> list[Hit]:
         """Reciprocal-rank fusion of dense + BM25 results, boosted by category match, then
         collapsed to parents (a parent's score is its best unit plus a little for extra hits)."""
+        dense = self._dense(query, k)
+        sparse = self._sparse(query, k)
+        dense_rank = {idx: r for r, (idx, _) in enumerate(dense)}
+        dense_sim = dict(dense)
+        bm25_rank = {idx: r for r, idx in enumerate(sparse)}
         fused: dict[int, float] = {}
-        for ranking in (self._dense(query, k), self._sparse(query, k)):
+        for ranking in ([idx for idx, _ in dense], sparse):
             for rank, idx in enumerate(ranking):
                 fused[idx] = fused.get(idx, 0.0) + 1.0 / (RRF_K + rank + 1)
         if boost_categories:
@@ -112,7 +122,14 @@ class HybridIndex:
             scored.sort(reverse=True)
             # Only the next two hits count, so a big table with many rows can't win on volume alone.
             score = scored[0][0] + EXTRA_HIT_WEIGHT * sum(s for s, _ in scored[1:3])
-            hits.append(Hit(self.parents[pid], score, self.units[scored[0][1]]))
+            idxs = [i for _, i in scored]
+            d_ranks = [dense_rank[i] for i in idxs if i in dense_rank]
+            b_ranks = [bm25_rank[i] for i in idxs if i in bm25_rank]
+            sims = [dense_sim[i] for i in idxs if i in dense_sim]
+            hits.append(Hit(self.parents[pid], score, self.units[scored[0][1]],
+                            dense_rank=min(d_ranks) if d_ranks else None,
+                            dense_sim=max(sims) if sims else None,
+                            bm25_rank=min(b_ranks) if b_ranks else None))
         hits.sort(key=lambda h: h.score, reverse=True)
         return hits
 

@@ -11,7 +11,7 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import DeterministicFakeEmbedding, Embeddings
 from langchain_core.language_models import BaseChatModel
 
-from app.config import Settings
+from app.config import Settings, judge_target
 
 
 def _make_chat(provider: str, model: str, temperature: float) -> BaseChatModel:
@@ -31,6 +31,12 @@ def get_llm(settings: Settings) -> BaseChatModel:
 def get_vision_llm(settings: Settings) -> BaseChatModel:
     provider = settings.vision_provider or settings.llm_provider
     model = settings.vision_model or settings.llm_model
+    return _make_chat(provider, model, 0.0)
+
+
+def get_judge_llm(settings: Settings) -> BaseChatModel:
+    """The model that grades answers. Usually a cheaper, faster model than the chat LLM."""
+    provider, model = judge_target(settings)
     return _make_chat(provider, model, 0.0)
 
 

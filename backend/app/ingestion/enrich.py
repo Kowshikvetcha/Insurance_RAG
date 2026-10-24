@@ -127,7 +127,8 @@ important limits, waiting periods or percentages. Only use facts present in the 
 </table>"""
 
 
-def summarise_tables(tables: list[NormalisedTable], llm: BaseChatModel | None, max_concurrency: int) -> int:
+def summarise_tables(tables: list[NormalisedTable], llm: BaseChatModel | None, max_concurrency: int,
+                     callbacks: list | None = None) -> int:
     """Fill NormalisedTable.summary in place; returns how many came from the LLM."""
     done = 0
     if llm is not None and tables:
@@ -135,7 +136,8 @@ def summarise_tables(tables: list[NormalisedTable], llm: BaseChatModel | None, m
             [HumanMessage(content=TABLE_SUMMARY_PROMPT.format(section=" › ".join(t.section_path) or "unknown", markdown=t.to_markdown(0, 60)[:12000]))]
             for t in tables
         ]
-        results = llm.batch(prompts, config={"max_concurrency": max_concurrency}, return_exceptions=True)
+        results = llm.batch(prompts, config={"max_concurrency": max_concurrency, "callbacks": callbacks or [], "run_name": "summarise_table"},
+                            return_exceptions=True)
         for t, res in zip(tables, results):
             if isinstance(res, Exception):
                 log.warning("Table summary failed: %s", type(res).__name__)
