@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Citation } from '../api'
@@ -24,11 +24,26 @@ export function ChatWindow({ sessionId, messages, onAsk, busy }: Props) {
   const [text, setText] = useState('')
   const [open, setOpen] = useState<Citation | null>(null)
   const [faqOpen, setFaqOpen] = useState(false)
-  const end = useRef<HTMLDivElement>(null)
+  const list = useRef<HTMLDivElement>(null)
+  const stickToBottom = useRef(true)
+  const lastCount = useRef(messages.length)
 
-  useEffect(() => {
-    end.current?.scrollIntoView({ behavior: 'smooth' })
+  // Follow the streaming answer only while the user is at the bottom, and jump instantly:
+  // a smooth scroll restarted on every update is what made the view jitter.
+  useLayoutEffect(() => {
+    const el = list.current
+    if (!el) return
+    if (messages.length !== lastCount.current) {
+      lastCount.current = messages.length
+      stickToBottom.current = true // a new question always brings the view down
+    }
+    if (stickToBottom.current) el.scrollTop = el.scrollHeight
   }, [messages])
+
+  const onScroll = () => {
+    const el = list.current
+    if (el) stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }
 
   const submit = (q: string) => {
     const question = q.trim()
@@ -40,7 +55,7 @@ export function ChatWindow({ sessionId, messages, onAsk, busy }: Props) {
 
   return (
     <div className="chat">
-      <div className="messages">
+      <div className="messages" ref={list} onScroll={onScroll}>
         {!sessionId && (
           <div className="empty">
             <h2>Understand a health policy before you buy it</h2>
@@ -60,29 +75,8 @@ export function ChatWindow({ sessionId, messages, onAsk, busy }: Props) {
           </div>
         )}
         {messages.map((m, i) => (
-          <div key={i} className={`msg ${m.role}`}>
-            <div className="bubble">
-              {m.role === 'assistant' ? (
-                <div className="md">
-                  <Markdown remarkPlugins={[remarkGfm]}>{m.content || (m.pending ? '…' : '')}</Markdown>
-                </div>
-              ) : (
-                m.content
-              )}
-              {m.error && <div className="error">{m.error}</div>}
-              {m.citations && m.citations.length > 0 && (
-                <div className="citations">
-                  {m.citations.map((c) => (
-                    <button key={c.source} className="chip cite" onClick={() => setOpen(c)} title={c.snippet}>
-                      <b>{c.source}</b> {c.type === 'table' ? 'Table' : c.type === 'figure' ? 'Figure' : 'Text'} · {c.page_label || c.section}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <MessageView key={i} message={m} onCite={setOpen} />
         ))}
-        <div ref={end} />
       </div>
 
       {faqOpen && sessionId && messages.length > 0 && (
@@ -137,6 +131,36 @@ export function ChatWindow({ sessionId, messages, onAsk, busy }: Props) {
     </div>
   )
 }
+
+const REMARK_PLUGINS = [remarkGfm]
+
+/** One chat message. Memoised: while an answer streams, only that message re-renders and
+ * re-parses its markdown; earlier messages keep the same object and are skipped. */
+const MessageView = memo(function MessageView({ message: m, onCite }: { message: Message; onCite: (c: Citation) => void }) {
+  return (
+    <div className={`msg ${m.role}`}>
+      <div className="bubble">
+        {m.role === 'assistant' ? (
+          <div className={`md${m.pending ? ' streaming' : ''}`}>
+            {m.content ? <Markdown remarkPlugins={REMARK_PLUGINS}>{m.content}</Markdown> : m.pending && <span className="typing" aria-label="Thinking"><i /><i /><i /></span>}
+          </div>
+        ) : (
+          m.content
+        )}
+        {m.error && <div className="error">{m.error}</div>}
+        {m.citations && m.citations.length > 0 && (
+          <div className="citations">
+            {m.citations.map((c) => (
+              <button key={c.source} className="chip cite" onClick={() => onCite(c)} title={c.snippet}>
+                <b>{c.source}</b> {c.type === 'table' ? 'Table' : c.type === 'figure' ? 'Figure' : 'Text'} · {c.page_label || c.section}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+})
 
 function SourceViewer({ citation, sessionId, onClose }: { citation: Citation; sessionId: string; onClose: () => void }) {
   useEffect(() => {

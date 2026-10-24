@@ -6,6 +6,8 @@ import { ChatWindow } from './components/ChatWindow'
 import { IngestionReport } from './components/IngestionReport'
 import { UploadPanel } from './components/UploadPanel'
 
+const TOKEN_FLUSH_MS = 60
+
 export default function App() {
   const [job, setJob] = useState<JobState | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -43,6 +45,25 @@ export default function App() {
   const patchLast = (fn: (m: Message) => Message) =>
     setMessages((ms) => [...ms.slice(0, -1), fn(ms[ms.length - 1])])
 
+  // Tokens arrive many times a second. Buffer them and apply at most every TOKEN_FLUSH_MS,
+  // so the answer re-renders (and re-parses its markdown) a few times a second, not per token.
+  const tokenBuffer = useRef('')
+  const flushTimer = useRef<number | null>(null)
+  const flushTokens = () => {
+    if (flushTimer.current !== null) {
+      window.clearTimeout(flushTimer.current)
+      flushTimer.current = null
+    }
+    const text = tokenBuffer.current
+    if (!text) return
+    tokenBuffer.current = ''
+    patchLast((m) => ({ ...m, content: m.content + text }))
+  }
+  const queueToken = (t: string) => {
+    tokenBuffer.current += t
+    if (flushTimer.current === null) flushTimer.current = window.setTimeout(flushTokens, TOKEN_FLUSH_MS)
+  }
+
   const onAsk = async (question: string) => {
     if (!sessionId) return
     const history: ChatTurn[] = messages.filter((m) => !m.error && m.content).map(({ role, content }) => ({ role, content }))
@@ -50,13 +71,21 @@ export default function App() {
     setBusy(true)
     try {
       await streamChat(sessionId, question, history, {
-        onToken: (t) => patchLast((m) => ({ ...m, content: m.content + t })),
-        onCitations: (c) => patchLast((m) => ({ ...m, citations: c })),
-        onError: (err) => patchLast((m) => ({ ...m, error: err })),
+        onToken: queueToken,
+        onCitations: (c) => {
+          flushTokens()
+          patchLast((m) => ({ ...m, citations: c }))
+        },
+        onError: (err) => {
+          flushTokens()
+          patchLast((m) => ({ ...m, error: err }))
+        },
       })
     } catch (e) {
+      flushTokens()
       patchLast((m) => ({ ...m, error: e instanceof Error ? e.message : String(e) }))
     } finally {
+      flushTokens()
       patchLast((m) => ({ ...m, pending: false }))
       setBusy(false)
     }
