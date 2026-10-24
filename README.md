@@ -109,5 +109,7 @@ Policy documents can contain personal data (names, policy and member numbers):
 
 ## Further documentation
 
+- [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md): what the project does and why, the ingestion and answering pipeline, UI components, tools used at each stage.
+- [docs/TECHNICAL_DESIGN.md](docs/TECHNICAL_DESIGN.md): engineering design: problem statement, requirements, design decisions with alternatives, ingestion and retrieval internals, API contracts, performance and ETA model, libraries and versions, testing, limitations.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how upload and chat requests flow through the code, a file-by-file reference, and the design decisions and gotchas.
 - [CLAUDE.md](CLAUDE.md): commands, conventions and invariants for working on the repo with Claude Code.
