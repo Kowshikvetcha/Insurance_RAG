@@ -131,16 +131,22 @@ def retrieval_strength(hits: list[Hit]) -> float:
 
 # --------------------------------------------------------------------------- judge
 
-def parse_judgement(text: str) -> dict:
-    """Extract the JSON object from the judge's reply (tolerates code fences and stray prose)."""
+def parse_json_object(text: str) -> dict:
+    """Extract the JSON object from an LLM reply (tolerates code fences and stray prose)."""
     text = text.strip()
     fenced = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.S)
     if fenced:
         text = fenced.group(1)
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end <= start:
-        raise ValueError("judge reply contained no JSON object")
-    return json.loads(text[start : end + 1])
+        raise ValueError("reply contained no JSON object")
+    value = json.loads(text[start : end + 1])
+    if not isinstance(value, dict):
+        raise ValueError("reply JSON is not an object")
+    return value
+
+
+parse_judgement = parse_json_object  # the judge's reply is one JSON object
 
 
 def apply_judgement(result: EvalResult, judgement: dict, n_sources: int) -> None:

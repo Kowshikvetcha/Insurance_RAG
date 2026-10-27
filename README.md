@@ -8,6 +8,11 @@ The core of the project is the **ingestion engine**. Insurance documents keep th
 in tables (benefit schedules, sub-limits, plan comparisons) and in charts, footnotes and definitions.
 Flattened text can't preserve any of that structure.
 
+The **Policy fit score** tab rates the uploaded policy 1–10 for one person. They fill in a health
+profile (basics, medical history, lifestyle, plans and priorities). Each relevant area of the policy is
+then rated against that profile with cited evidence. Code combines the ratings into a single score, and
+the LLM explains it. See [Policy fit score](#policy-fit-score).
+
 ## Ingestion pipeline
 
 | Stage | What it does | Code |
@@ -74,10 +79,30 @@ The file is laid out in three commented steps:
   `SESSION_TTL_MINUTES`.
 - Restart the backend after editing `.env`. Never commit it: it is gitignored because it holds your keys.
 
+## Policy fit score
+
+After an upload, open **Policy fit score** and fill in the form. The result is a 1–10 score (1 = worst
+fit, 10 = best), a verdict band, a confidence level, the reasoning, and one card per area with its
+rating and cited evidence.
+
+- **Rubric.** Up to nine areas: pre-existing conditions, waiting periods, sum insured, co-payment and
+  deductibles, room rent and sub-limits, exclusions, maternity, extras (OPD, dental, AYUSH), and age
+  limits and renewal. Maternity and extras count only when the person asks for them.
+- **Weights follow the profile.** For example, pre-existing conditions weigh 3.0 when conditions are
+  declared and 0.5 when none are.
+- **The LLM rates each area, and code sets the score.** Each area's LLM call returns a 1–10 rating or
+  "not specified", a deal-breaker flag and cited evidence. `fit_score.combine()` takes the weighted mean
+  of the rated areas and caps it at 4 if any area is a deal-breaker. Areas the policy doesn't cover are
+  left out and lower the confidence.
+- **It is not purchase advice.** The score rates how well the document's terms match the profile. It
+  ignores price and other insurers.
+
+Weights, queries and the cap live in `DIMENSIONS` at the top of `backend/app/fit_score.py`.
+
 ## Project layout
 
 ```text
-backend/app/            FastAPI app: config, providers, store, rag, prompts, routers
+backend/app/            FastAPI app: config, providers, store, rag, fit_score, prompts, routers
 backend/app/ingestion/  ingestion engine: parser, tables, figures, enrich, chunking, pipeline
 backend/tests/          pytest suite + synthetic policy fixture
 frontend/src/           React UI: api client, App, components
@@ -124,11 +149,14 @@ Policy documents can contain personal data (names, policy and member numbers):
 - Sessions expire after `SESSION_TTL_MINUTES`, and `DELETE /documents/{id}` removes one immediately.
 - Document text and figure images **are sent to the configured embedding and LLM/vision providers**.
   Use `ollama` for the LLM if that's not acceptable.
+- The fit-score health profile is used for one request only. It is never stored (not even in the
+  browser) or logged, and traces record only a redacted summary (age band, counts, flags). The full
+  profile **is sent to the configured LLM provider** inside the prompts.
 
 ## Further documentation
 
 - [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md): what the project does and why, the ingestion and answering pipeline, UI components, tools used at each stage.
 - [docs/TECHNICAL_DESIGN.md](docs/TECHNICAL_DESIGN.md): engineering design: problem statement, requirements, design decisions with alternatives, ingestion and retrieval internals, API contracts, performance and ETA model, libraries and versions, testing, limitations.
 - [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md): tracing with self-hosted Langfuse, live answer scores (groundedness, relevance, confidence), the offline RAGAS suite, and how to read them.
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how upload and chat requests flow through the code, a file-by-file reference, and the design decisions and gotchas.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how upload, chat and fit-score requests flow through the code, a file-by-file reference, and the design decisions and gotchas.
 - [CLAUDE.md](CLAUDE.md): commands, conventions and invariants for working on the repo with Claude Code.

@@ -16,7 +16,7 @@ All backend commands run from `backend/` with the venv's Python. The venv uses `
 ```bash
 # backend
 .venv/Scripts/python -m uvicorn app.main:app --port 8000          # API on :8000 (/, /health, /docs)
-.venv/Scripts/python -m pytest                                     # all 26 tests, ~60 s (runs real Docling models)
+.venv/Scripts/python -m pytest                                     # all tests, ~60 s (runs real Docling models)
 .venv/Scripts/python -m pytest -m "not slow"                       # fast unit tests, ~2 s
 .venv/Scripts/python tests/fixtures/make_sample_policy.py          # regenerate the sample policy PDF
 
@@ -59,7 +59,8 @@ chat → routers/chat.py → rag.answer_stream: rewrite → hybrid search (RRF +
 - **Tables stay whole and separate from prose.** Every unit starts with a contextual header `[file › section path] (Table: title)`.
 - **Grounding rules live in `prompts.py`.** Answer only from the excerpts, cite `[Source N]`, name plan/column and row for table values, surface waiting periods, exclusions, sub-limits, co-pays and footnotes, say "The policy document does not specify this." when the answer is absent, and give no purchase advice. Preserve these when editing prompts.
 - **Privacy.** Documents stay in memory only. Never log document text or chunk contents (log exception types and ids only). Don't add disk persistence without the user agreeing to it.
-- **The SSE contract** between `rag.answer_stream`/`routers/chat.py` and `frontend/src/api.ts::streamChat` is the event names `query`, `token`, `citations`, `error`, `done`. Change both sides together. The same applies to the report and citation dict shapes in `pipeline.build_report` / `rag.build_context` and their TypeScript types in `api.ts`.
+- **The SSE contract** between `rag.answer_stream`/`routers/chat.py` and `frontend/src/api.ts::streamChat` is the event names `query`, `token`, `citations`, `error`, `done`. Change both sides together. The fit score has its own contract, between `fit_score.fit_score_stream`/`routers/fit.py` and `api.ts::streamFitScore`: `stage`, `citations`, `dimension`, `score`, `token`, `error`, `done`. Its payloads mirror `DimensionResult`/`FitScore` and `HealthProfile`.
+- **Fit score.** The 1–10 score is computed in code (`fit_score.combine`) from per-dimension LLM ratings. The LLM never sets the final number. The health profile is sensitive: never store it on the session, log it, or put it in trace inputs (use `redacted_profile()`). The same applies to the report and citation dict shapes in `pipeline.build_report` / `rag.build_context` and their TypeScript types in `api.ts`.
 - **Observability.** Only `app/observability.py` imports Langfuse; everything else uses its `Span` wrapper, which is a no-op when `LANGFUSE_*` keys are empty (tests force them empty in `offline_settings()`). Pass `span.callbacks()` in the LangChain config of every new LLM call so it shows up in the trace. Live grading lives in `app/evaluation.py` and runs after streaming as a background task, so it must never raise or delay the answer. Never put document text in the Python logger; traces may contain it because Langfuse is local-only.
 - **Judge model** defaults to the chat provider's cheaper model (`config.CHEAP_JUDGE_MODELS`); `judge_target()` resolves it. RAGAS 0.4.3 needs `evals/ragas_compat.install()` before import (LangChain 1.x removed a module it imports).
 - **Suggested questions** live only in `frontend/src/faq.ts`. Keep them generic, not tied to one insurer or plan, so they make sense for any uploaded policy.

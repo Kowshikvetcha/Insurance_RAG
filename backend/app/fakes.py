@@ -6,6 +6,7 @@ exercise ingestion, retrieval, citations and streaming in the UI and in tests.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Iterator
 
@@ -23,6 +24,14 @@ def _text_of(message: BaseMessage) -> str:
 
 def _fake_reply(messages: list[BaseMessage]) -> str:
     prompt = _text_of(messages[-1])
+    if "<fit-dimension>" in prompt:  # fit-score dimension prompt: a fixed, valid rating
+        first = re.search(r'<source id="(\d+)"', prompt)
+        source = int(first.group(1)) if first else 1
+        return json.dumps({"rating": 6, "deal_breaker": False,
+                           "verdict": f"(Offline mode: no LLM configured.) Placeholder rating [Source {source}].",
+                           "evidence": [{"source": source, "text": "Offline placeholder"}]})
+    if "<fit-summary>" in prompt:  # fit-score reasoning prompt
+        return "(Offline mode: no LLM configured.) The score above combines placeholder ratings for each area."
     if "Follow-up question:" in prompt:  # query-rewrite prompt
         return prompt.rsplit("Follow-up question:", 1)[1].strip()
     excerpt = re.search(r"<source[^>]*>\s*(.*?)\s*</source>", prompt, re.S)

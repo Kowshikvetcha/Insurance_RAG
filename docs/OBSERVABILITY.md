@@ -133,6 +133,7 @@ The golden set (`evals/datasets/sample_policy.jsonl`, 26 questions) covers table
 | `backend/app/observability.py` | The only module that imports Langfuse: client setup, `Span` wrapper (no-op when disabled), LangChain callback handler, scores, flush. |
 | `backend/app/evaluation.py` | Judge prompt, JSON parsing, metric formulas, heuristics, `record_scores`. |
 | `backend/app/rag.py` | `chat` trace, child spans, background evaluation task after streaming. |
+| `backend/app/fit_score.py` | `fit_score` trace: the input is `redacted_profile()` only (age band, counts, flags). It has retrieval spans, a `dimension:<key>` span per area, a `fit:summary` generation and a `fit_score` numeric score. The prompts, which contain the profile, are recorded as generations. |
 | `backend/app/store.py` | `Hit.dense_rank`, `dense_sim`, `bm25_rank` (retrieval diagnostics). |
 | `backend/app/ingestion/pipeline.py` | `ingest` trace with a span per stage. |
 | `backend/evals/run_evals.py` | Offline suite, reports, Langfuse dataset runs. |
