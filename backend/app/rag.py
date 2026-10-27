@@ -101,34 +101,49 @@ def _pages_label(pages: list[int]) -> str:
     return f"pp. {pages[0]}–{pages[-1]}"
 
 
+def source_block(n: int, hit: Hit, text: str) -> str:
+    """One excerpt as the LLM sees it. `text` may be the parent text truncated to the context cap."""
+    p = hit.parent
+    section = " › ".join(p.section_path)
+    return f'<source id="{n}" type="{p.type}" pages="{_pages_label(p.pages)}" section="{section}">\n{text}\n</source>'
+
+
+def citation(session: Session, n: int, hit: Hit) -> dict:
+    """The citation dict the UI shows for source n (mirrored by `Citation` in frontend/src/api.ts)."""
+    p = hit.parent
+    snippet = hit.best_unit.page_content.split("\n", 1)[-1]
+    return {
+        "source": n,
+        "type": p.type,
+        "pages": p.pages,
+        "page_label": _pages_label(p.pages),
+        "section": " › ".join(p.section_path),
+        "title": p.title,
+        "snippet": snippet[:400],
+        "content": p.text if p.type in {"table", "figure"} else p.text[:1500],
+        "figure_id": p.ref if p.type == "figure" and p.ref in session.figures_png else None,
+    }
+
+
+def glossary_block(session: Session, text: str) -> str:
+    terms = find_terms(text, session.glossary)
+    return "\n".join(f"- {d.definition} (p. {d.page})" if d.page else f"- {d.definition}" for d in terms) or "(none)"
+
+
 def build_context(session: Session, question: str, hits: list[Hit]) -> tuple[str, str, list[dict]]:
     excerpts: list[str] = []
     citations: list[dict] = []
     used = 0
     for n, hit in enumerate(hits, start=1):
-        p = hit.parent
-        text = p.text
+        text = hit.parent.text
         if used + len(text) > MAX_CONTEXT_CHARS:
             text = text[: max(0, MAX_CONTEXT_CHARS - used)]
             if not text:
                 break
         used += len(text)
-        section = " › ".join(p.section_path)
-        excerpts.append(f'<source id="{n}" type="{p.type}" pages="{_pages_label(p.pages)}" section="{section}">\n{text}\n</source>')
-        snippet = hit.best_unit.page_content.split("\n", 1)[-1]
-        citations.append({
-            "source": n,
-            "type": p.type,
-            "pages": p.pages,
-            "page_label": _pages_label(p.pages),
-            "section": section,
-            "title": p.title,
-            "snippet": snippet[:400],
-            "content": p.text if p.type in {"table", "figure"} else p.text[:1500],
-            "figure_id": p.ref if p.type == "figure" and p.ref in session.figures_png else None,
-        })
-    terms = find_terms(question + "\n" + "\n".join(excerpts), session.glossary)
-    definitions = "\n".join(f"- {d.definition} (p. {d.page})" if d.page else f"- {d.definition}" for d in terms) or "(none)"
+        excerpts.append(source_block(n, hit, text))
+        citations.append(citation(session, n, hit))
+    definitions = glossary_block(session, question + "\n" + "\n".join(excerpts))
     return "\n\n".join(excerpts), definitions, citations
 
 

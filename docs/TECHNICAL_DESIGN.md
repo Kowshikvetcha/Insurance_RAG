@@ -250,6 +250,17 @@ The RRF score used in step 2 is:
 - Give a short direct answer first, then the conditions as bullets.
 - No purchase or financial advice.
 
+### Policy fit score (`fit_score.py`)
+
+A fit score could come from one LLM call that reads the profile and the excerpts and returns a number. That was rejected because the number drifts between runs and is hard to justify. Instead the design is a **rubric with LLM ratings and a score computed in code**:
+
+- `DIMENSIONS` defines each area: label, instructions, queries built from the profile, a weight function and an `applies` predicate.
+- `_retrieve_for()` runs each dimension's queries through `rag.retrieve()` and keeps up to 6 distinct parents. All dimensions retrieve concurrently, then parents get one global source numbering, so `[Source N]` means the same excerpt everywhere.
+- `_assess()` makes one LLM call per dimension (concurrency 4), with `FIT_SYSTEM_PROMPT` and `FIT_DIMENSION_TEMPLATE`. The reply is parsed with `evaluation.parse_json_object` and retried once. Evidence citing a source outside that dimension is dropped. If a dimension fails, it is marked `failed` and the rest of the score still runs.
+- `combine()` is pure: score = Σ wᵢ·rᵢ / Σ wᵢ over rated dimensions, clamped to 1–10 and rounded to 0.1. Any deal-breaker caps it at 4. Confidence is High when rated weight is ≥ 85 % of the applicable weight, Medium when it is ≥ 60 %, and Low otherwise. Bands: ≥ 9 Excellent, ≥ 7 Good, ≥ 4 Partial, otherwise Poor.
+- `FIT_SUMMARY_TEMPLATE` streams the reasoning from the per-dimension verdicts and evidence (not the raw excerpts). It is told not to change the score.
+- The prompts keep every grounding rule from `SYSTEM_PROMPT` and frame the score as fit of the terms to the profile, not a purchase recommendation.
+
 ## 7. Data model and API contracts
 
 ### Core types
@@ -263,6 +274,8 @@ The RRF score used in step 2 is:
 | `Parent` | `ingestion/chunking.py` | `id`, `type` (text, table, figure), `text`, `pages[]`, `section_path[]`, `title`, `categories[]`, `ref` |
 | Unit (`langchain_core.documents.Document`) | `ingestion/chunking.py` | `page_content` (header + text); metadata `unit_id`, `parent_id`, `type` (text, table_row, table_summary, figure), `pages`, `section_path`, `categories` |
 | `Session` | `store.py` | `id`, `filename`, `index: HybridIndex`, `glossary`, `report`, `figures_png`, `last_access` |
+| `HealthProfile` | `schemas.py` | age, gender, city tier, covered members, desired sum insured and budget (rupees), conditions, medications, surgeries, lifestyle, planned procedures, wanted extras, priorities |
+| `DimensionResult` / `FitScore` | `fit_score.py` | per-dimension `rating`, `status`, `deal_breaker`, `verdict`, `evidence`, `sources`; overall `score`, `band`, `confidence`, `capped`, `not_specified`, `breakdown` |
 | `Job` | `jobs.py` | `status`, `stage`, `message`, `percent`, `eta_seconds`, `session_id`, `error`, `version` |
 
 ### HTTP API (FastAPI, port 8000; proxied as `/api` by Vite)
@@ -276,6 +289,7 @@ The RRF score used in step 2 is:
 | GET | `/documents/{sid}/figures/{fid}.png` | — | PNG crop (in-memory only) |
 | DELETE | `/documents/{sid}` | — | `{deleted: bool}` |
 | POST | `/chat` | `{session_id, question (≤ 2,000 chars), history: [{role, content}]}` | SSE stream (below); 404 if the session has expired |
+| POST | `/fit-score` | `{session_id, profile: HealthProfile}` | SSE stream (below); 404 if the session has expired, 422 on an invalid profile |
 | GET | `/health`, `/` | — | Liveness and service info |
 
 ### Chat SSE event sequence
@@ -289,6 +303,20 @@ The RRF score used in step 2 is:
 | last | `done` | `{}` |
 
 The event names and payload shapes are a contract between `rag.py` / `routers/chat.py` and `frontend/src/api.ts`; change them together.
+
+### Fit-score SSE event sequence
+
+| Order | Event | Payload |
+| --- | --- | --- |
+| 1 | `stage` | Progress text (repeats between phases) |
+| 2 | `citations` | All sources, same shape as chat citations |
+| 3..n | `dimension` | One `DimensionResult`, in completion order |
+| n+1 | `score` | `FitScore` |
+| then | `token` | Reasoning text fragment |
+| on failure | `error` | Message (≤ 400 characters) |
+| last | `done` | `{}` |
+
+Mirrored by `streamFitScore` and the `HealthProfile` / `DimensionResult` / `FitScore` types in `frontend/src/api.ts`.
 
 ## 8. Concurrency, performance and progress
 

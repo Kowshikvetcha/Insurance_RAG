@@ -3,6 +3,7 @@ import type { ChatTurn, JobState, Report } from './api'
 import { fetchReport, streamChat, uploadDocument, watchJob } from './api'
 import type { Message } from './components/ChatWindow'
 import { ChatWindow } from './components/ChatWindow'
+import { FitScorePanel } from './components/FitScorePanel'
 import { IngestionReport } from './components/IngestionReport'
 import { UploadPanel } from './components/UploadPanel'
 
@@ -15,6 +16,7 @@ export default function App() {
   const [report, setReport] = useState<Report | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [busy, setBusy] = useState(false)
+  const [view, setView] = useState<'chat' | 'fit'>('chat')
   const stopWatching = useRef<(() => void) | null>(null)
 
   useEffect(() => () => stopWatching.current?.(), [])
@@ -25,6 +27,7 @@ export default function App() {
     setSessionId(null)
     setReport(null)
     setMessages([])
+    setView('chat')
     setJob({ id: '', filename: file.name, status: 'queued', stage: 'queued', message: 'Uploading', percent: 0, session_id: null, error: null })
     try {
       const { job_id } = await uploadDocument(file)
@@ -103,8 +106,26 @@ export default function App() {
           Answers come only from your document. This tool explains policy terms and does not give purchase advice.
         </p>
       </aside>
-      <main>
-        <ChatWindow sessionId={sessionId} messages={messages} onAsk={onAsk} busy={busy} />
+      <main className="main">
+        {sessionId && (
+          <nav className="view-tabs" aria-label="View">
+            <button className={`faq-tab${view === 'chat' ? ' active' : ''}`} onClick={() => setView('chat')} aria-pressed={view === 'chat'}>
+              Chat
+            </button>
+            <button className={`faq-tab${view === 'fit' ? ' active' : ''}`} onClick={() => setView('fit')} aria-pressed={view === 'fit'}>
+              Policy fit score
+            </button>
+          </nav>
+        )}
+        {/* Both views stay mounted so switching keeps the conversation and the score. */}
+        <div className="view" hidden={view !== 'chat'}>
+          <ChatWindow sessionId={sessionId} messages={messages} onAsk={onAsk} busy={busy} />
+        </div>
+        {sessionId && (
+          <div className="view" hidden={view !== 'fit'}>
+            <FitScorePanel key={sessionId} sessionId={sessionId} />
+          </div>
+        )}
       </main>
     </div>
   )

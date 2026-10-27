@@ -35,6 +35,9 @@ flowchart LR
   CR --> RG[rag.py]
   RG --> ST
   RG --> LLM[providers.py LLM / reranker]
+  API -- POST /fit-score SSE --> FR[routers/fit.py]
+  FR --> FS[fit_score.py]
+  FS --> RG
 ```
 
 ### Upload → index (one document)
@@ -68,6 +71,18 @@ flowchart LR
    4. The chat LLM streams an answer, using `SYSTEM_PROMPT` and `ANSWER_TEMPLATE` from `prompts.py`.
 3. SSE events go out in this order: `query`, then `token`…, then `citations`, then `done` (`error` on failure). `streamChat()` parses them by hand, because EventSource cannot POST.
 
+### Health profile → policy fit score
+
+1. `FitScorePanel` → `FitScoreForm` collects a `HealthProfile` (basics, medical history, lifestyle, plans and priorities). `streamFitScore()` sends `POST /fit-score` with `{session_id, profile}` (`schemas.FitScoreRequest`).
+2. `routers/fit.py` streams `fit_score_stream()` from `fit_score.py`:
+   1. `applicable_dimensions()` picks the rubric dimensions that apply to the person and weights them from the profile. For example, maternity only applies when a pregnancy is planned, and pre-existing conditions weigh 3.0 when conditions are declared.
+   2. Each dimension runs its queries through `rag.retrieve()` (some queries are built from the profile, such as "diabetes coverage waiting period"). Parents get one source numbering across all dimensions.
+   3. One LLM call per dimension (`FIT_DIMENSION_TEMPLATE`) returns JSON: a 1–10 rating or `null` ("not specified"), a `deal_breaker` flag, a verdict and cited evidence. These run concurrently.
+   4. `combine()` computes the score in code: the weighted mean of the rated dimensions, capped at 4 by any deal-breaker. Silent dimensions are left out of the mean and lower the confidence.
+   5. A streamed LLM call (`FIT_SUMMARY_TEMPLATE`) writes the reasoning from the assessments. It never changes the score.
+3. SSE events: `stage`…, `citations`, `dimension`… (in completion order), `score`, `token`…, then `done` (`error` on failure).
+4. Privacy: the profile is never stored or logged. Trace inputs get `redacted_profile()` (age band, counts and flags). The LLM prompts, which include the profile, reach the local Langfuse like any other generation.
+
 ## Directories
 
 | Path | Purpose |
@@ -100,6 +115,8 @@ flowchart LR
 | `backend/app/schemas.py` | Pydantic request/response models for upload and chat. |
 | `backend/app/routers/documents.py` | `POST /documents`, `GET /documents/jobs/{id}`, `GET /documents/jobs/{id}/events` (SSE), `GET /documents/{sid}/report`, `GET /documents/{sid}/figures/{fid}.png`, `DELETE /documents/{sid}`. |
 | `backend/app/routers/chat.py` | `POST /chat`, which streams `answer_stream` events over SSE. |
+| `backend/app/fit_score.py` | Policy fit score: the `DIMENSIONS` rubric, per-dimension retrieval and LLM rating, `combine()` (weighted score, deal-breaker cap, confidence) and the `fit_score_stream` async generator. |
+| `backend/app/routers/fit.py` | `POST /fit-score`, which streams `fit_score_stream` events over SSE. |
 
 ### Backend: ingestion engine
 
@@ -126,6 +143,7 @@ flowchart LR
 | `backend/tests/test_evaluation.py` | Evaluation maths with a canned judge, citation heuristics, no-op tracing. |
 | `backend/evals/run_evals.py` | Offline suite over `evals/datasets/*.jsonl`: our metrics + RAGAS, reports in `evals/reports/`, Langfuse dataset runs. |
 | `infra/langfuse/` | Self-hosted Langfuse: official compose file, localhost-only override, generated secrets in a gitignored `.env`. |
+| `backend/tests/test_fit_score.py` | Fit score: rubric rules, `combine()`, reply parsing, redaction, the 404 route, and the offline stream (marked `slow`). |
 | `backend/tests/test_api.py` | HTTP tests through `TestClient`, including a full upload → chat → delete flow (marked `slow`). |
 
 ### Frontend
@@ -133,12 +151,15 @@ flowchart LR
 | File | Purpose |
 | --- | --- |
 | `frontend/vite.config.ts` | Dev server on :5173 that proxies `/api/*` to `http://127.0.0.1:8000` and strips the `/api` prefix. |
-| `frontend/src/api.ts` | Types that mirror the backend payloads, plus `uploadDocument`, `watchJob` (EventSource), `fetchReport`, `figureUrl` and `streamChat` (fetch + manual SSE parsing). |
-| `frontend/src/App.tsx` | App shell: upload/job/session/report state, chat history, and streaming updates to the last message. |
+| `frontend/src/api.ts` | Types that mirror the backend payloads, plus `uploadDocument`, `watchJob` (EventSource), `fetchReport`, `figureUrl`, `streamChat` and `streamFitScore` (fetch + the shared `postSse` SSE parser). |
+| `frontend/src/App.tsx` | App shell: upload/job/session/report state, the Chat / Policy fit score switch, chat history, and streaming updates to the last message. |
 | `frontend/src/components/UploadPanel.tsx` | Drop zone, progress bar and stage checklist. |
 | `frontend/src/components/IngestionReport.tsx` | Report stats, warnings, table previews, figures, defined terms. |
 | `frontend/src/components/ChatWindow.tsx` | Message list (markdown), citation chips, the "Common questions" toggle, and `SourceViewer` (table/text/figure modal). Shows the FAQ panel on the empty screens. |
 | `frontend/src/components/FaqPanel.tsx` | Common-questions panel: category tabs, a search box across all questions, click-to-ask. A full version for the empty states and a compact one for the composer popover. |
+| `frontend/src/components/FitScorePanel.tsx` | The Policy fit view: holds the profile in memory, runs `streamFitScore`, and switches between the form and the result. |
+| `frontend/src/components/FitScoreForm.tsx` | The health profile form, in four sections. |
+| `frontend/src/components/FitScoreResult.tsx` | Score dial, band and confidence, streamed reasoning, per-dimension cards with evidence and citation chips. |
 | `frontend/src/faq.ts` | The FAQ content: 41 common health-insurance questions in 6 categories (Coverage, Waiting periods, Limits & costs, Exclusions, Claims, Renewal & premium). Edit this file to change the suggestions. |
 | `frontend/src/index.css` | Theme tokens (light and dark) and all styles, including the mobile layout. |
 

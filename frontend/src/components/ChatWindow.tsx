@@ -162,7 +162,7 @@ const MessageView = memo(function MessageView({ message: m, onCite }: { message:
   )
 })
 
-function SourceViewer({ citation, sessionId, onClose }: { citation: Citation; sessionId: string; onClose: () => void }) {
+export function SourceViewer({ citation, sessionId, onClose }: { citation: Citation; sessionId: string; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()

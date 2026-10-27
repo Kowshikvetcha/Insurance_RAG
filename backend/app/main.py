@@ -12,7 +12,7 @@ from app.deps import AppState
 from app.ingestion.parser_base import get_parser
 from app.jobs import JobManager
 from app.providers import get_judge_llm, get_llm, get_reranker
-from app.routers import chat, documents
+from app.routers import chat, documents, fit
 from app.store import SessionStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -88,6 +88,7 @@ app.add_middleware(
 )
 app.include_router(documents.router)
 app.include_router(chat.router)
+app.include_router(fit.router)
 
 
 @app.get("/", include_in_schema=False)

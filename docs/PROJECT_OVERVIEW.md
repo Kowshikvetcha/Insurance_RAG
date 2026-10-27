@@ -104,6 +104,16 @@ Each question runs through `app/rag.py` and comes back as a streamed answer plus
 5. **Grounded prompt** (`app/prompts.py`): answer only from the excerpts; cite `[Source N]`; for tables, name the plan (column) and benefit (row); always surface waiting periods, exclusions, sub-limits, co-pays and footnotes; say "The policy document does not specify this" when the answer isn't there; no purchase advice.
 6. **Streaming**: Server-Sent Events emit `query`, then `token` events, then `citations` (page, type, snippet, the full table or text, and a figure image link), then `done`.
 
+## Policy fit score
+
+A person fills in a health profile and gets a 1–10 score for how well the uploaded policy fits them, with the reasoning and citations. `app/fit_score.py` handles it, and `POST /fit-score` streams it.
+
+1. **Rubric**: up to nine dimensions (pre-existing conditions, waiting periods, sum insured, co-payment, sub-limits, exclusions, maternity, extras, age limits and renewal). Each is weighted from the profile, and optional ones apply only when relevant.
+2. **Retrieval per dimension**: fixed queries plus profile-driven ones (for example "diabetes coverage waiting period") go through the same hybrid search and rerank. Sources share one numbering across dimensions.
+3. **Rating per dimension**: one LLM call per dimension, run concurrently, returns JSON: a 1–10 rating or null ("not specified"), a deal-breaker flag, a verdict and cited evidence.
+4. **Score in code**: the weighted mean of rated dimensions, capped at 4 by a deal-breaker. Silent dimensions lower the confidence instead of the score.
+5. **Reasoning**: a streamed LLM explanation ("What works for you", "Gaps and risks", "Check with the insurer") that cannot change the number.
+
 ## Frontend
 
 The UI is a single-page React 19 + TypeScript app built with Vite. Its dev server proxies `/api/*` to the backend on port 8000. The layout is a sidebar (upload and ingestion report) beside the chat, and it collapses to one column on narrow screens. It supports light and dark themes.
@@ -116,7 +126,8 @@ The UI is a single-page React 19 + TypeScript app built with Vite. Its dev serve
 | ChatWindow | `src/components/ChatWindow.tsx` | FAQ panel on the empty screens and a "Common questions" toggle mid-chat, streamed answers rendered as markdown (react-markdown + remark-gfm), citation chips per answer |
 | SourceViewer | inside `ChatWindow.tsx` | Clicking a chip opens the cited table rendered as a grid, the text, or the figure image; Escape closes it |
 | API client | `src/api.ts` | Upload, job watching, report fetch, and a fetch-based SSE parser for `POST /chat` (EventSource cannot POST) |
-| App shell | `src/App.tsx` | Session state, chat history sent with each question, streaming updates to the last message |
+| FitScorePanel / Form / Result | `src/components/FitScore*.tsx` | The Policy fit score tab: a four-section health profile form (rupee amounts with a lakh/crore hint, client-side validation), then a score dial with band and confidence, streamed reasoning, and per-dimension cards with evidence and citation chips |
+| App shell | `src/App.tsx` | Session state, the Chat / Policy fit score switch, chat history sent with each question, streaming updates to the last message |
 
 ## Tools and components by stage
 
@@ -194,6 +205,7 @@ Issues found and fixed during verification:
 - Documents are processed in memory only and never written to disk, and their contents are never logged.
 - A session is evicted after 120 idle minutes, and `DELETE /documents/{id}` removes it immediately.
 - Text and figure images are sent to the configured embedding and LLM/vision providers. Use a local Ollama model if that is not acceptable.
+- The fit-score health profile lives only for one request. It is never stored or logged, and traces get a redacted summary. It is sent to the LLM provider inside the prompts.
 
 **Current limitations**
 
